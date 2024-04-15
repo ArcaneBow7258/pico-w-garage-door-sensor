@@ -1,138 +1,46 @@
 # Raspberry Pi Pico W Garage Door Sensor
-
+Orignal Link:
 [![Lint](https://github.com/geerlingguy/pico-w-garage-door-sensor/actions/workflows/lint.yml/badge.svg?branch=master)](https://github.com/geerlingguy/pico-w-garage-door-sensor/actions/workflows/lint.yml)
 
-I wanted to build a sensor to determine the state of my garage door—open or closed—and send that state to Home Assistant so I can display the status in a dashboard and build automation from it (e.g. warning me if I'm asleep and the garage door is open!).
+Mostly the same but wanted to add integration of technologies/codebases I was more familiar in (specifically microdot)
+[Microdot](https://microdot.readthedocs.io/en/latest/) is a micropython library that acts very similar to the format of Flask for regular Python.
 
-If I wanted some sort of cloud integration, I could pay for the kit that connects to my garage door opener, but since [the cloud is just someone else's computer](https://blog.codinghorror.com/the-cloud-is-just-someone-elses-computer/), and I'd rather not rely on some company's weak security to protect data about my home... I want it all local.
+## Supplies
+- [5V relay](https://www.amazon.com/dp/B00LW15A4W) (1 Channel per Garage door you're interested in)
+- [Magnetic Swithes](https://www.amazon.com/dp/B086GYJLM)
+  - You could use limit/physical switchese I'd imagine you just need some circuit to be compeleted when closed.
+- Pico W (obviously)
+- Bread Board
+- Wires (long enough)
+- Power supply
 
-## Garage Door sensors
+## Wiring 
+1. Relay
+  - DC+ -> V_out or 3.3V (really always-on voltage)
+    - So technically the relay is 5V which might might be an issue with Pico W being a 3.3V device... so external power is preferable
+  - DC- -> Ground
+  - IN -> Relay Pin in your code (the toggler)
+  - COM -> 5v of Garage
+  - NO (normally open) -> Input of garage
+    - You might need to do research of what your garage wiring interface looks like 
+2. Magnetic Switches
+  - COM -> V_out or 3.3V
+  - NO -> Input pin for Garage Door
+## Preparing to flash the Pico W
 
-The actual sensors I use are the ['Enforcer' (model SM-4201-LQ) from Seco-Larm](https://amzn.to/3hD2uGc). I chose these because they are rugged and purpose-built for mounting to garage door tracks.
+Create a config.py file with variables of `ssid, password` and optionally a `users` list of tuples.
+- Optional to use a `@app.before_request` to authetnicate the user using SHA256
+- So your list should be [(User1, SHA256 hash in byte data type), (User2....)]
+- Just a really simple 'password check' if you need an extra layer
+  - Note, technically anyone plugged into your PicoW can read that config file so if any risk of that think about it a little. 
 
-Watch [this video](https://youtu.be/dFDGtlSi9Eg?t=459) to see how I installed the sensors on my garage doors, and how I wired them to the Pico W.
+## External Connection
+So theres multiple ways of going by this:
+1. Port-forwarding your Pico W to the open internet (easy but bad if someone cares)
+2. Reverse Proxy it? (Ngninx?)
+  - NGINX also allows for [authentication](https://docs.nginx.com/nginx/admin-guide/security-controls/configuring-http-basic-authentication/) per page which is nice 
+3. VPN and access through that (current config).
+   - I set up Wireguard on an internal device which is port-forwarded to open internet
+   - Exchange Public Keys between internal server and client you'd like be able to use the Pico W
+   - Set up NGINX to redirect ports on internal server to Pico W's internal IP (i.e., redirect '/' to '192.168.2.10' which is Pico's Address locally
 
-![RPi Pico Breakout Board wired to garage door sensor](/images/rpi-pico-breakout-pins.jpg)
-
-I used a [RPi Pico Breakout board](https://amzn.to/3O3wFT8) mounted directly to my garage wall, and wired one wire of each sensor to ground, and the others thusly:
-
-  - `east_garage_door` to GPIO pin 2
-  - `west_garage_door` to GPIO pin 3
-
-You can pick any GPIO connection, though—just change the appropriate lines inside `garage-door.yml` before flashing the Pico W using the instructions below.
-
-## Flashing the Pico W
-
-I decided to use a Raspberry Pi Pico W for this project—you could probably also use an ESP32 or ESP8266 with slight modifications, since this project uses [ESPHome](https://esphome.io).
-
-You will have to flash the firmware to the Pico W in order for it to work.
-
-> **Note**: I also have a MicroPython-based setup in the [`micropython`](pico-w-garage-door-sensor/tree/master/micropython) subdirectory.
-
-### Preparing to flash the Pico W
-
-Before you can flash anything to the Pico W, you have to define a few `secrets` that ESPHome will use when it compiles the program.
-
-Create a `secrets.yaml` file inside this directory, and add the following:
-
-```yaml
----
-wifi_ssid: your-wifi-ssid-here
-wifi_password: your-wifi-password-here
-ota_password: choose-an-ota-password
-
-# Encryption key for HA API access.
-# Generate a random 32-bit key with `openssl rand -base64 32`
-api_encryption_key: choose-an-api-encryption-key
-```
-
-> **Note**: The [ESPHome docs API page](https://esphome.io/components/api.html) can generate an encryption key in-browser.
-
-### Using Docker
-
-In this directory, I run `docker-compose up -d` to start an esphome container that I'll use to flash the Pico.
-
-Then enter the container:
-
-```
-$ docker exec -it esphome bash
-root@docker-desktop:/config#
-```
-
-This drops you into the container inside the `config` directory, which is shared from this repository.
-
-Compile the binary for the garage door sensor:
-
-```
-$ esphome compile garage-door.yml
-```
-
-Copy the generated binary into the current directory:
-
-```
-$ cp .esphome/build/rpi-pico/.pioenvs/rpi-pico/firmware.uf2 ./rpi-pico.uf2
-```
-
-Then on your host computer, with the Pico W booted into BOOTSEL mode (hold down the BOOTSEL button while plugging in the USB cable), copy the `rpi-pico.uf2` file over to the Pico W. When the copy is complete, the Pico should reboot and start working as a garage door sensor.
-
-### Using pip source install
-
-Make sure you have Python 3 installed on your computer, then run:
-
-```
-$ pip3 install esphome
-```
-
-Make sure your installation is working:
-
-```
-$ esphome version
-Version: 2023.11.6
-```
-
-Then plug in your Pico W, while holding the BOOTSEL button, and when it mounts on your computer, run:
-
-```
-$ esphome run garage-door.yml --device /Volumes/RPI-RP2
-```
-
-> On Raspberry Pi or other Linux devices, the `--device` should be `/dev/sda1` (or whatever mount point)
-
-After 20-30 seconds, ESPHome should compile and upload the firmware to the Pico.
-
-> Note: There's also an `led-blink.yml` configuration if you want to upload it quickly to verify `esphome` and your Pico are all wired up correctly. If you `run` that file, it should make your Pico start blinking it's onboard LED 2x per second.
-
-### Installation from a Raspberry Pi
-
-If you are using a Raspberry Pi, first install Pip:
-
-```
-sudo apt install python3-pip git
-```
-
-Then follow the directions above for 'Using pip source install'.
-
-#### First time install
-
-For now, if you're not running things on a Mac at least, the first install must be done by copying a manually-downloaded .uf2 file to the Pico in BOOTSEL mode.
-
-After ensuring `esphome` installed (see 'Using pip source install' above):
-
-  1. Run `esphome dashboard ./`
-  2. In a browser, visit the Pi's IP address at port `:6052`
-  3. Click the three dots next to the project
-  4. Click 'Install'
-  5. Click 'Manual download'
-  6. Click the link and wait for the download to be generated, then click the Download link.
-
-Copy the downloaded `rpi-pico.uf2` file to the Pico's filesystem while it's in BOOTSEL mode (hold down BOOTSEL while plugging it in). Unplug and replug the Pico.
-
-### Debugging with ESPHome
-
-If you want to see debug output, after the first time you flash the Pico, you can change the `run` command to:
-
-```
-$ esphome run led-blink.yml --device /dev/tty.usbmodem2101
-```
-
-And it will compile ESPHome, load it onto the Pico, and start displaying logged output. You can change the [log level](https://esphome.io/components/logger.html) using the `logger.level` setting.
