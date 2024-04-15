@@ -4,3 +4,6 @@
 /.esphome/
 /secrets.yaml
 /rpi-pico.uf2
+/micropython/config.py
+cert.*
+key.*
